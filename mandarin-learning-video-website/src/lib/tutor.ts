@@ -768,50 +768,81 @@ type OpenAiResponse = {
   choices?: Array<{ message?: { content?: string } }>;
 };
 
+
+type GeminiResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+  }>;
+};
+
 export async function buildAiReply(
   message: string,
   turn: number,
   history: Array<{ role: string; content: string }>,
 ): Promise<TutorReply> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
+
   if (!apiKey) return buildLocalReply(message, turn);
 
   const system = [
     "You are Xiaomin (小敏), a warm Mandarin Chinese conversation partner for an English-speaking beginner.",
-    "Always reply in natural beginner Mandarin (short sentences, HSK 1-2 vocabulary), then pinyin with tone marks, then an English translation.",
-    "Gently correct mistakes in the learner's Mandarin or pinyin, and suggest a natural follow-up question.",
-    "Return ONLY JSON with keys: zh, pinyin, en, coach, tips (array of 2-3 short strings), vocab (array of {zh,pinyin,en}, 3 items), suggestions (array of 3 short Chinese sentences the learner can say next).",
+    "Use short natural beginner Mandarin, HSK 1-2 vocabulary.",
+    "Provide Chinese, tone-marked pinyin, and English translation.",
+    "Gently correct mistakes.",
+    "Return ONLY JSON with keys: zh, pinyin, en, coach, tips, vocab, suggestions.",
+    "vocab must contain objects with zh, pinyin and en.",
   ].join(" ");
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-        temperature: 0.7,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: system },
-          ...history.slice(-8).map((entry) => ({
-            role: entry.role === "assistant" ? "assistant" : "user",
-            content: entry.content,
-          })),
-          { role: "user", content: message },
-        ],
-      }),
-      signal: AbortSignal.timeout(12000),
-    });
+    const contents = [
+      ...history.slice(-8).map((entry) => ({
+        role: entry.role === "assistant" ? "model" : "user",
+        parts: [{ text: entry.content }],
+      })),
+      { role: "user", parts: [{ text: message }] },
+    ];
 
-    if (!response.ok) return buildLocalReply(message, turn);
-    const data = (await response.json()) as OpenAiResponse;
-    const raw = data.choices?.[0]?.message?.content;
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents,
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.7,
+            maxOutputTokens: 1200,
+          },
+        }),
+        signal: AbortSignal.timeout(20000),
+      },
+    );
+
+    if (!response.ok) {
+      console.error("Gemini API error:", response.status, await response.text());
+      return buildLocalReply(message, turn);
+    }
+
+    const data = (await response.json()) as GeminiResponse;
+    const raw = data.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text ?? "")
+      .join("");
+
     if (!raw) return buildLocalReply(message, turn);
+
     const parsed = JSON.parse(raw) as Partial<TutorReply>;
-    if (!parsed.zh || !parsed.pinyin || !parsed.en) return buildLocalReply(message, turn);
+
+    if (!parsed.zh || !parsed.pinyin || !parsed.en) {
+      return buildLocalReply(message, turn);
+    }
+
     return {
       zh: parsed.zh,
       pinyin: parsed.pinyin,
@@ -819,39 +850,14 @@ export async function buildAiReply(
       coach: parsed.coach ?? "Great effort — let's keep going.",
       tips: Array.isArray(parsed.tips) ? parsed.tips.slice(0, 3) : [],
       vocab: Array.isArray(parsed.vocab) ? parsed.vocab.slice(0, 4) : [],
-      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.slice(0, 4) : [],
+      suggestions: Array.isArray(parsed.suggestions)
+        ? parsed.suggestions.slice(0, 4)
+        : [],
       matched: findMatch(message),
       engine: "openai",
     };
-  } catch {
+  } catch (error) {
+    console.error("Gemini tutor error:", error);
     return buildLocalReply(message, turn);
   }
 }
-
-export const TUTOR_STARTERS = [
-  {
-    zh: "你好！我叫…",
-    pinyin: "Nǐ hǎo! Wǒ jiào…",
-    en: "Hello! My name is…",
-  },
-  {
-    zh: "我想点菜，不要辣。",
-    pinyin: "Wǒ xiǎng diǎn cài, bú yào là.",
-    en: "I'd like to order, not spicy.",
-  },
-  {
-    zh: "请问，地铁站在哪儿？",
-    pinyin: "Qǐngwèn, dìtiězhàn zài nǎr?",
-    en: "Excuse me, where is the metro station?",
-  },
-  {
-    zh: "这个多少钱？太贵了！",
-    pinyin: "Zhège duōshao qián? Tài guì le!",
-    en: "How much is this? Too expensive!",
-  },
-  {
-    zh: "我今天很开心。",
-    pinyin: "Wǒ jīntiān hěn kāixīn.",
-    en: "I'm very happy today.",
-  },
-];
