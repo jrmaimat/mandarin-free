@@ -92,10 +92,14 @@ export async function POST(request: Request) {
     const messages = existing.slice(-58).map(toMessage).concat(inserted.map(toMessage));
 
     return Response.json({ reply, turn, messages });
-  } catch {
-    return Response.json({ error: "Your tutor could not answer just now. Try again." }, { status: 500 });
+   } catch (error) {
+    console.error("TUTOR API ERROR:", error);
+
+    return Response.json(
+      { error: "Your tutor could not answer just now. Try again." },
+      { status: 500 },
+    );
   }
-}
 
 export async function DELETE(request: Request) {
   const url = new URL(request.url);
