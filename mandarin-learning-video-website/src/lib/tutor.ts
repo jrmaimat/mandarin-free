@@ -861,3 +861,30 @@ export async function buildAiReply(
     return buildLocalReply(message, turn);
   }
 }
+export const TUTOR_STARTERS = [
+  {
+    zh: "你好！我叫…",
+    pinyin: "Nǐ hǎo! Wǒ jiào…",
+    en: "Hello! My name is…",
+  },
+  {
+    zh: "我想点菜，不要辣。",
+    pinyin: "Wǒ xiǎng diǎn cài, bú yào là.",
+    en: "I'd like to order, not spicy.",
+  },
+  {
+    zh: "请问，地铁站在哪儿？",
+    pinyin: "Qǐngwèn, dìtiězhàn zài nǎr?",
+    en: "Excuse me, where is the metro station?",
+  },
+  {
+    zh: "这个多少钱？太贵了！",
+    pinyin: "Zhège duōshao qián? Tài guì le!",
+    en: "How much is this? Too expensive!",
+  },
+  {
+    zh: "我今天很开心。",
+    pinyin: "Wǒ jīntiān hěn kāixīn.",
+    en: "I'm very happy today.",
+  },
+];
